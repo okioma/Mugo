@@ -1,0 +1,59 @@
+// get the boundary of the feature you want to work on
+var region = ee.FeatureCollection("users/mautiharonokioma/transzoia");
+
+//Add the layer to map viewer
+Map.addLayer(region, {},'Boundary');
+
+function mask2Cloud(image){
+  var qa = image.select('QA60');
+  //bits 10 and 11 are clouds and cirrus respectively
+  var cloudsBitMask= 1<<10;
+  var cirrusBitMask=1<<11;
+  //Both flags should be set to zero to show a free condition
+  var mask=qa.bitwiseAnd(cloudsBitMask).eq(0)
+  .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+  return image.updateMask(mask).divide(10000);
+  
+}
+
+
+// Get the sentinel 2 Image Collection
+var S2 = ee.ImageCollection("COPERNICUS/S2_SR")
+.filterDate('2021-01-01', '2021-06-30')
+.filterBounds(region)
+.filterMetadata('CLOUDY_PIXEL_PERCENTAGE','Less_than',1)
+.map(mask2Cloud);
+
+var mean = S2.reduce(ee.Reducer.mean()).clip(region);
+
+var vis_param = {min:0, max:2000,bands:['B4_mean', 'B3_mean', 'B2_mean'], gamma: 1.6};
+Map.addLayer(mean, vis_param,'Sentinel Image');
+
+//Step 2 
+//Calculate NDVI using NIR and RED bands
+var NIR = mean.select('B8_mean');
+var RED = mean.select('B4_mean');
+var NDVI = NIR.subtract(RED).divide(NIR.add(RED));
+Map.addLayer(NDVI.clip(region),{palette:'white,green'},'NDVI');
+
+//Step 3
+//Extracting only vegetation – in this case we need only maize and this will be done by studying the normalized difference vegetation index of maize and placing it into the code
+var Maize = NDVI;
+Maize = ee.Image(1).mask(Maize.lt(0.768).and(Maize.gt(0.3)));
+Map.addLayer(Maize.clip(region),{palette:'green'},'Maize Area');
+
+//Step 4 
+//Calculate Area in km2
+var area_pxa = Maize.multiply(ee.Image.pixelArea())
+.reduceRegion(ee.Reducer.sum(),region,10,null,null,false,1e13)
+.get('constant');
+area_pxa = ee.Number(area_pxa).divide(1e6);
+print('Area using ee.Image.pixelArea(km2)', area_pxa);
+Map.setCenter(35, 1, 10);
+
+// Calculating the Area of the Given region
+var regionArea = region.geometry().area().divide(1e6);
+print('Area of Region(km2)', regionArea);
+// Calculating the Leaf Area Index
+var leafAreaIndex = (area_pxa.divide(regionArea));
+print('Leaf Area Index',leafAreaIndex);
