@@ -1,0 +1,28 @@
+var region = ee.FeatureCollection("users/mautiharonokioma/transzoia");
+
+//cloud masking
+function mask2Cloud(image){
+  var qa = image.select('QA60');
+  //bits 10 and 11 are clouds and cirrus respectively
+  var cloudsBitMask= 1<<10;
+  var cirrusBitMask=1<<11;
+  //Both flags should be set to zero to show a free condition
+  var mask=qa.bitwiseAnd(cloudsBitMask).eq(0)
+  .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+  return image.updateMask(mask).divide(10000);
+  
+}
+var sentinel2=ee.ImageCollection("COPERNICUS/S2")
+.filterDate('2020-4-1','2020-7-30')
+.filterBounds(region)
+//.filterMetadata('CLOUDY_PIXEL_PERCENTAGE','LESS_THAN',1);
+//.clip(region);
+.map(mask2Cloud);
+var image=sentinel2.reduce(ee.Reducer.mean()).clip(region);
+var visual={
+  min:0,
+  max:3000,
+  bands:['B4_mean','B3_mean','B2_mean']
+};
+Map.setCenter(35,1,10);
+ Map.addLayer(image,visual,"sentinel image");
